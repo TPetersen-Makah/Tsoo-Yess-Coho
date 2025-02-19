@@ -1,0 +1,156 @@
+## Correlation Matrix for predicting Coho marine survival in R #####
+
+##Step 1: Set working directory
+
+###Setting the working directory tells R where to look for the
+###files you're identifying. Once you set the working directory,
+###you can find files in the "files tab" on the box in the bottom
+###right then click on them to open. However, I like to specify the 
+###working directory in the beginning so that way the code will 
+###work right when you open it, rather then having to set up the file
+###path manually each time. 
+
+#setting working directory
+setwd("F:/Backup 8-11-22/Fish Files/Salmon/Coho/Sooes/Forecasts/Forecast2025")
+
+
+##Step 2: Install needed packages and make sure they are loaded into
+##this session of R using the function library(). I find it works better to 
+##install one package at a time.
+#install.packages("Hmisc")
+#install.packages("ggpubr")
+#install.packages("openxlsx")
+#install.packages("corrplot")
+
+library("ggpubr")
+library("Hmisc")
+library("openxlsx")
+
+
+##Step 3: Load datasets
+
+### this is the filepath where I keep the forecast data files.
+### it may be different for you. Make sure you set this to the
+### correct file path for you.
+
+library(readxl)
+forecastdata <- read_excel("D:/Backup 8-11-22/Salmon/Coho/Sooes/Forecasts/Forecast2025/TY Coho Forecast Data for RY2025_forR.xlsx")
+
+
+###R can only run the correlation function if the whole dataframe is numeric. Line 42, tests if the dataset is numeric.
+### Line 44 converts the imported data into a datafram and then line 46 converts it all to numeric so the correlation
+### function will work. Delete columns for BY and Smolt Yr.  
+is.numeric(forecastdata)
+
+data.frame(forecastdata)
+as.numeric(forecastdata)
+
+
+## This is the correlation matrix formula. The first argument is the data, the second argument signifies pairwise
+## deletion, which deletes incomplete pairs of data from the dataset so the correlation function has equal x's and y's.
+## This function automatically use the pearson coefficient, but you could signify kendall or spearman if you want.This
+## is great, it produces a cool correlation matrix, but it only displays the correlation coefficient, not significance.
+## to combine the two into one readable matrix, 
+corrreasults<-cor(forecastdata, use = "pairwise.complete.obs")
+
+
+#### This section is writing a function in R which creates a readable correlation matrix that has both correlation coefficients
+### and significance values in the same matrix. Significance is displayed by using *,**,*** which corresponds to p values
+### of 0.001, 0.01, 0.05
+##==============================================================================================================================
+#' correlation_matrix
+#' Creates a publication-ready / formatted correlation matrix, using `Hmisc::rcorr` in the backend.
+#'
+#' @param df dataframe; containing numeric and/or logical columns to calculate correlations for
+#' @param type character; specifies the type of correlations to compute; gets passed to `Hmisc::rcorr`; options are `"pearson"` or `"spearman"`; defaults to `"pearson"`
+#' @param digits integer/double; number of decimals to show in the correlation matrix; gets passed to `formatC`; defaults to `3`
+#' @param decimal.mark character; which decimal.mark to use; gets passed to `formatC`; defaults to `.`
+#' @param use character; which part of the correlation matrix to display; options are `"all"`, `"upper"`, `"lower"`; defaults to `"all"`
+#' @param show_significance boolean; whether to add `*` to represent the significance levels for the correlations; defaults to `TRUE`
+#' @param replace_diagonal boolean; whether to replace the correlations on the diagonal; defaults to `FALSE`
+#' @param replacement character; what to replace the diagonal and/or upper/lower triangles with; defaults to `""` (empty string)
+#'
+#' @return a correlation matrix
+#' @export
+#'
+#' @examples
+#' `correlation_matrix(iris)`
+#' `correlation_matrix(mtcars)`
+correlation_matrix <- function(df, 
+                               type = "pearson",
+                               digits = 3, 
+                               decimal.mark = ".",
+                               use = "all", 
+                               show_significance = TRUE, 
+                               replace_diagonal = FALSE, 
+                               replacement = ""){
+  
+  # check arguments
+  stopifnot({
+    is.numeric(digits)
+    digits >= 0
+    use %in% c("all", "upper", "lower")
+    is.logical(replace_diagonal)
+    is.logical(show_significance)
+    is.character(replacement)
+  })
+  # we need the Hmisc package for this
+  require(Hmisc)
+  
+  # retain only numeric and boolean columns
+  isNumericOrBoolean = vapply(df, function(x) is.numeric(x) | is.logical(x), logical(1))
+  if (sum(!isNumericOrBoolean) > 0) {
+    cat('Dropping non-numeric/-boolean column(s):', paste(names(isNumericOrBoolean)[!isNumericOrBoolean], collapse = ', '), '\n\n')
+  }
+  df = df[isNumericOrBoolean]
+  
+  # transform input data frame to matrix
+  x <- as.matrix(df)
+  
+  # run correlation analysis using Hmisc package
+  correlation_matrix <- Hmisc::rcorr(x, type = )
+  R <- correlation_matrix$r # Matrix of correlation coeficients
+  p <- correlation_matrix$P # Matrix of p-value 
+  
+  # transform correlations to specific character format
+  Rformatted = formatC(R, format = 'f', digits = digits, decimal.mark = decimal.mark)
+  
+  # if there are any negative numbers, we want to put a space before the positives to align all
+  if (sum(R < 0) > 0) {
+    Rformatted = ifelse(R > 0, paste0(' ', Rformatted), Rformatted)
+  }
+  
+  # add significance levels if desired
+  if (show_significance) {
+    # define notions for significance levels; spacing is important.
+    stars <- ifelse(is.na(p), "   ", ifelse(p < .001, "***", ifelse(p < .01, "** ", ifelse(p < .05, "*  ", "   "))))
+    Rformatted = paste0(Rformatted, stars)
+  }
+  # build a new matrix that includes the formatted correlations and their significance stars
+  Rnew <- matrix(Rformatted, ncol = ncol(x))
+  rownames(Rnew) <- colnames(x)
+  colnames(Rnew) <- paste(colnames(x), "", sep =" ")
+  
+  # replace undesired values
+  if (use == 'upper') {
+    Rnew[lower.tri(Rnew, diag = replace_diagonal)] <- replacement
+  } else if (use == 'lower') {
+    Rnew[upper.tri(Rnew, diag = replace_diagonal)] <- replacement
+  } else if (replace_diagonal) {
+    diag(Rnew) <- replacement
+  }
+  
+  return(Rnew)
+}
+##======================================================================================================
+
+
+###This part stores the correlation matrix as an object in R
+TYresults<-correlation_matrix(forecastdata)
+
+TYresults
+
+### From here, open the "TYresults" object from the global environment. It
+### will come up as a new tab. Then you can right click, copy all, and paste right
+### into excel. Perfect matrix!
+
